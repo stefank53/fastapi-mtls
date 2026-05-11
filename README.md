@@ -42,6 +42,11 @@ config changes in that scenario.
 
 Have fun with the exercises below!
 
+## Roadmap
+
+Planned additions are tracked as
+[GitHub Issues](https://github.com/stefank53/fastapi-mtls/issues).
+
 ## Prerequisites
 
 These instructions assume the following are already installed and
