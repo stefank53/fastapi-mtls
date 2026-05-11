@@ -10,6 +10,20 @@ This repository contains:
 - A minimal FastAPI server that requires mTLS
 - A Python client and curl examples for testing the setup
 
+## Quick start
+
+For visitors who just want to see it run:
+
+```bash
+git clone https://github.com/stefank53/fastapi-mtls
+cd fastapi-mtls
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+Then follow **section 2** to generate the certificate chain, and
+**section 3** to start the server and exercise the `/ping` endpoint.
+
 ## Background
 
 Cloudflare has an excellent write-up on the mTLS handshake process:
@@ -63,7 +77,7 @@ used in the EKU verification step is OpenSSL 3.0+ only — substitute
 | --- | --- |
 | `main.py` | FastAPI server that listens on port 8443 and requires mTLS. Exposes a single `/ping` endpoint that returns `{"message": "pong"}`. |
 | `client.py` | Python client that uses httpx to call `/ping` over mTLS. Builds an `ssl.SSLContext` explicitly for compatibility with httpx 0.28+. |
-| `test_tls.py` | Diagnostic script that exercises the mTLS handshake at the raw stdlib `ssl` layer, bypassing httpx. Useful for isolating TLS issues from HTTP client issues. |
+| `check_tls.py` | Diagnostic script that exercises the mTLS handshake at the raw stdlib `ssl` layer, bypassing httpx. Useful for isolating TLS issues from HTTP client issues. |
 | `ca.cfg` | OpenSSL config defining the Root CA's subject and extensions (basic constraints marking it as a CA, key usage, identifiers). |
 | `server.cfg` | OpenSSL config for the server certificate. Contains the `serverAuth` EKU and the `subjectAltName` entries (`localhost`, `127.0.0.1`, `::1`). |
 | `client.cfg` | OpenSSL config for the client certificate. Contains the `clientAuth` EKU. |
@@ -284,7 +298,22 @@ openssl s_client -connect localhost:8443 \
     </dev/null
 ```
 
-### 4.4 See what's listening on port 8443
+### 4.4 Run the raw TLS diagnostic
+
+If higher-level clients (httpx, requests) give confusing errors,
+`check_tls.py` exercises the handshake using only the stdlib `ssl`
+module. Errors from `ssl` are more specific than the wrapped versions
+HTTP clients produce, which makes it easier to tell whether a problem
+lives in the TLS configuration or the HTTP layer.
+
+```bash
+python check_tls.py
+```
+
+On success it prints the trusted CA(s), the negotiated cipher and TLS
+version, and the subject of the server's certificate.
+
+### 4.5 See what's listening on port 8443
 
 Useful if you get an "address already in use" error when starting the
 server.
