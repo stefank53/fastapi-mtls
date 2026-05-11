@@ -76,6 +76,12 @@ the httpx HTTP client used by `client.py`.
 pip install -r requirements.txt
 ```
 
+or
+
+```bash
+pip install fastapi uvicorn httpx
+```
+
 ---
 
 ## 2. Certificate Creation
