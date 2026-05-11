@@ -1,8 +1,49 @@
-# FastAPI mTLS Server — Setup and Test Notes
+# FastAPI mTLS Server
 
-End-to-end commands for setting up a Python virtual environment, generating
-the certificate chain, running the FastAPI mTLS server, and testing it from
-a client.
+An example implementation of mutual TLS authentication using FastAPI.
+
+This repository contains:
+
+- End-to-end commands for setting up a Python virtual environment
+- OpenSSL recipes for generating the certificate chain for the server and
+  client
+- A minimal FastAPI server that requires mTLS
+- A Python client and curl examples for testing the setup
+
+## Background
+
+Cloudflare has an excellent write-up on the mTLS handshake process:
+[What is mutual TLS (mTLS)?](https://www.cloudflare.com/learning/access-management/what-is-mutual-tls/)
+
+The section titled *"Certificate authorities in mTLS"* is particularly
+worth reading — it's where I've seen the most mistakes made.
+
+In this example, both the server and client certificates are signed by a
+single local CA for simplicity. In a real-world deployment the server
+certificate would typically be signed by a public CA (so any client trusts
+it out of the box), while the client certificate would be signed by a
+private CA hosted by the server's organization (so only authorized clients
+are accepted). See the relevant section of `main.py` for how the server
+config changes in that scenario.
+
+Have fun with the exercises below!
+
+## Files
+
+| File | Purpose |
+| --- | --- |
+| `main.py` | FastAPI server that listens on port 8443 and requires mTLS. Exposes a single `/ping` endpoint that returns `{"message": "pong"}`. |
+| `client.py` | Python client that uses httpx to call `/ping` over mTLS. Builds an `ssl.SSLContext` explicitly for compatibility with httpx 0.28+. |
+| `test_tls.py` | Diagnostic script that exercises the mTLS handshake at the raw stdlib `ssl` layer, bypassing httpx. Useful for isolating TLS issues from HTTP client issues. |
+| `ca.cfg` | OpenSSL config defining the Root CA's subject and extensions (basic constraints marking it as a CA, key usage, identifiers). |
+| `server.cfg` | OpenSSL config for the server certificate. Contains the `serverAuth` EKU and the `subjectAltName` entries (`localhost`, `127.0.0.1`, `::1`). |
+| `client.cfg` | OpenSSL config for the client certificate. Contains the `clientAuth` EKU. |
+| `requirements.txt` | Pinned Python dependencies (`fastapi`, `uvicorn`, `httpx`). |
+| `.gitignore` | Excludes the virtual environment, Python caches, and all certificate/key material from version control. |
+
+Generated files (created by following the steps below, not committed to
+the repo): `ca.key`, `ca.pem`, `server.key`, `server.csr`, `server.pem`,
+`client.key`, `client.csr`, `client.pem`, and `ca.srl`.
 
 ---
 
@@ -32,7 +73,7 @@ Installs the FastAPI framework, the uvicorn ASGI server that runs it, and
 the httpx HTTP client used by `client.py`.
 
 ```bash
-pip install fastapi uvicorn httpx
+pip install -r requirements.txt
 ```
 
 ---
@@ -43,13 +84,19 @@ All commands below assume the OpenSSL config files (`ca.cfg`, `server.cfg`,
 `client.cfg`) are in the current directory and contain the relevant
 `extendedKeyUsage` and `subjectAltName` extensions.
 
+Certificate lifetimes are set via the `-days` flag on the command line.
+OpenSSL ignores `days` when set inside a config file's `[ req ]` section,
+so the flag is required to get anything other than the 30-day default.
+
 ### Generate a self-signed Root CA
 
 Creates a new RSA private key (`ca.key`) and a self-signed root certificate
-(`ca.pem`). This CA will sign both the server and client certificates.
+(`ca.pem`) valid for 10 years. This CA will sign both the server and client
+certificates.
 
 ```bash
-openssl req -x509 -new -nodes -keyout ca.key -out ca.pem -config ca.cfg
+openssl req -x509 -new -nodes -days 3650 \
+    -keyout ca.key -out ca.pem -config ca.cfg
 ```
 
 ### Create a CSR for the server
@@ -65,7 +112,9 @@ openssl req -new -newkey rsa:2048 -nodes \
 
 ### Sign the server certificate with the CA
 
-The CA signs the CSR to produce `server.pem`. The `-extfile` and
+The CA signs the CSR to produce `server.pem`, valid for 825 days (the
+maximum lifetime accepted by Apple/Chrome for publicly-trusted certs, and
+a sensible default for private chains too). The `-extfile` and
 `-extensions` flags carry the `serverAuth` EKU and SAN entries from the
 config file into the final certificate — without these, the extensions
 would be dropped.
@@ -73,7 +122,7 @@ would be dropped.
 ```bash
 openssl x509 -req -in server.csr \
     -CA ca.pem -CAkey ca.key -CAcreateserial \
-    -out server.pem \
+    -out server.pem -days 825 \
     -extfile server.cfg -extensions v3_req
 ```
 
@@ -98,12 +147,13 @@ openssl req -new -newkey rsa:2048 -nodes \
 
 ### Sign the client certificate with the CA
 
-Produces `client.pem`, signed by the same CA as the server cert.
+Produces `client.pem`, signed by the same CA as the server cert and valid
+for 825 days.
 
 ```bash
 openssl x509 -req -in client.csr \
     -CA ca.pem -CAkey ca.key -CAcreateserial \
-    -out client.pem \
+    -out client.pem -days 825 \
     -extfile client.cfg -extensions v3_req
 ```
 
@@ -218,7 +268,7 @@ Deletes all keys, certs, CSRs, and the CA serial file. Run this when you
 want to regenerate the entire chain from scratch.
 
 ```bash
-rm -f *.key *.pem *.csr *.srl
+rm -f *.key *.pem *.crt *.csr *.srl
 ```
 
 ### Create .crt copies for GUI inspection
