@@ -1,0 +1,19 @@
+# Virtual environment
+.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Ignore Private Key .key files
+*.key
+
+# Ignore Certificate Signing Requests .csr files
+*.csr
+
+# Ignore Certificate .pem, .crt files
+*.pem
+*.crt
+
+# Ignore Certificate Serial .srl files
+*.srl
