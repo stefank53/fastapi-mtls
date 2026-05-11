@@ -28,6 +28,35 @@ config changes in that scenario.
 
 Have fun with the exercises below!
 
+## Prerequisites
+
+These instructions assume the following are already installed and
+available on your `PATH`:
+
+- **Python 3** (3.10 or newer recommended; tested on 3.12)
+- **`python3-venv`** for creating virtual environments
+- **OpenSSL** for generating keys and certificates
+- **curl** (optional, for the curl-based test in section 3)
+
+On Ubuntu 24.04 these come from the default repositories:
+
+```bash
+sudo apt update
+sudo apt install python3 python3-venv openssl curl
+```
+
+Verify the versions:
+
+```bash
+python3 --version
+openssl version
+```
+
+The commands and config files in this repo have been tested with Python
+3.12 and OpenSSL 3.0.x. Older OpenSSL 1.1.x will work but the `-ext` flag
+used in the EKU verification step is OpenSSL 3.0+ only — substitute
+`-text | grep -A1 "Extended Key Usage"` if you're on 1.1.x.
+
 ## Files
 
 | File | Purpose |
@@ -49,7 +78,7 @@ the repo): `ca.key`, `ca.pem`, `server.key`, `server.csr`, `server.pem`,
 
 ## 1. Environment Setup
 
-### Create the virtual environment
+### 1.1 Create the virtual environment
 
 Creates an isolated Python environment in `.venv/` so project dependencies
 don't affect the system Python.
@@ -58,7 +87,7 @@ don't affect the system Python.
 python3 -m venv .venv
 ```
 
-### Activate the virtual environment
+### 1.2 Activate the virtual environment
 
 Switches the current shell to use the venv's Python and pip. The shell
 prompt will show `(.venv)` while it's active.
@@ -67,7 +96,7 @@ prompt will show `(.venv)` while it's active.
 source .venv/bin/activate
 ```
 
-### Install Python packages
+### 1.3 Install Python packages
 
 Installs the FastAPI framework, the uvicorn ASGI server that runs it, and
 the httpx HTTP client used by `client.py`.
@@ -94,7 +123,7 @@ Certificate lifetimes are set via the `-days` flag on the command line.
 OpenSSL ignores `days` when set inside a config file's `[ req ]` section,
 so the flag is required to get anything other than the 30-day default.
 
-### Generate a self-signed Root CA
+### 2.1 Generate a self-signed Root CA
 
 Creates a new RSA private key (`ca.key`) and a self-signed root certificate
 (`ca.pem`) valid for 10 years. This CA will sign both the server and client
@@ -105,7 +134,7 @@ openssl req -x509 -new -nodes -days 3650 \
     -keyout ca.key -out ca.pem -config ca.cfg
 ```
 
-### Create a CSR for the server
+### 2.2 Create a CSR for the server
 
 Generates the server's private key (`server.key`) and a Certificate Signing
 Request (`server.csr`). The CSR carries the subject and extension requests
@@ -116,7 +145,7 @@ openssl req -new -newkey rsa:2048 -nodes \
     -keyout server.key -out server.csr -config server.cfg
 ```
 
-### Sign the server certificate with the CA
+### 2.3 Sign the server certificate with the CA
 
 The CA signs the CSR to produce `server.pem`, valid for 825 days (the
 maximum lifetime accepted by Apple/Chrome for publicly-trusted certs, and
@@ -132,7 +161,7 @@ openssl x509 -req -in server.csr \
     -extfile server.cfg -extensions v3_req
 ```
 
-### Verify the server cert has the serverAuth EKU
+### 2.4 Verify the server cert has the serverAuth EKU
 
 Confirms the Extended Key Usage extension was applied correctly. Expected
 output: `TLS Web Server Authentication`.
@@ -141,7 +170,7 @@ output: `TLS Web Server Authentication`.
 openssl x509 -in server.pem -noout -ext extendedKeyUsage
 ```
 
-### Create a CSR for the client
+### 2.5 Create a CSR for the client
 
 Same pattern as the server CSR, but using `client.cfg` (which requests the
 `clientAuth` EKU instead).
@@ -151,7 +180,7 @@ openssl req -new -newkey rsa:2048 -nodes \
     -keyout client.key -out client.csr -config client.cfg
 ```
 
-### Sign the client certificate with the CA
+### 2.6 Sign the client certificate with the CA
 
 Produces `client.pem`, signed by the same CA as the server cert and valid
 for 825 days.
@@ -163,7 +192,7 @@ openssl x509 -req -in client.csr \
     -extfile client.cfg -extensions v3_req
 ```
 
-### Verify the client cert has the clientAuth EKU
+### 2.7 Verify the client cert has the clientAuth EKU
 
 Expected output: `TLS Web Client Authentication`.
 
@@ -175,7 +204,7 @@ openssl x509 -in client.pem -noout -ext extendedKeyUsage
 
 ## 3. Running the Test
 
-### Terminal 1 — start the server
+### 3.1 Terminal 1 — start the server
 
 Run the server directly via the `__main__` block in `main.py`:
 
@@ -196,7 +225,7 @@ uvicorn main:app \
     --ssl-cert-reqs 2
 ```
 
-### Terminal 2 — test from the client
+### 3.2 Terminal 2 — test from the client
 
 Activate the venv in the new terminal (each shell needs its own activation):
 
@@ -224,7 +253,7 @@ Expected response: `{"message":"pong"}`.
 
 ## 4. Troubleshooting
 
-### Verify the certificate chain
+### 4.1 Verify the certificate chain
 
 Confirms each leaf certificate chains correctly back to the CA. Both should
 print `OK`.
@@ -234,7 +263,7 @@ openssl verify -CAfile ca.pem server.pem
 openssl verify -CAfile ca.pem client.pem
 ```
 
-### Inspect a certificate's full contents
+### 4.2 Inspect a certificate's full contents
 
 Useful when something is rejected and the cause isn't obvious. Shows the
 subject, issuer, validity period, SAN, EKU, and other extensions.
@@ -243,7 +272,7 @@ subject, issuer, validity period, SAN, EKU, and other extensions.
 openssl x509 -in server.pem -noout -text
 ```
 
-### Test the TLS handshake directly
+### 4.3 Test the TLS handshake directly
 
 Bypasses the HTTP layer entirely. The output will show the negotiated
 cipher, certificate chain, and any verification errors.
@@ -255,7 +284,7 @@ openssl s_client -connect localhost:8443 \
     </dev/null
 ```
 
-### See what's listening on port 8443
+### 4.4 See what's listening on port 8443
 
 Useful if you get an "address already in use" error when starting the
 server.
@@ -268,7 +297,7 @@ sudo lsof -i :8443
 
 ## 5. Environment Cleanup
 
-### Remove certificate files for a fresh start
+### 5.1 Remove certificate files for a fresh start
 
 Deletes all keys, certs, CSRs, and the CA serial file. Run this when you
 want to regenerate the entire chain from scratch.
@@ -277,7 +306,7 @@ want to regenerate the entire chain from scratch.
 rm -f *.key *.pem *.crt *.csr *.srl
 ```
 
-### Create .crt copies for GUI inspection
+### 5.2 Create .crt copies for GUI inspection
 
 Some certificate viewers (Windows Explorer, Keychain Access) only
 recognize the `.crt` extension even though the file format is identical
@@ -288,7 +317,7 @@ cp server.pem server.crt
 cp client.pem client.crt
 ```
 
-### Deactivate the virtual environment
+### 5.3 Deactivate the virtual environment
 
 Returns the shell to the system Python. The `.venv/` directory remains
 intact and can be reactivated later.
